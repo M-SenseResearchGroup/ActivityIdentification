@@ -22,7 +22,8 @@ if strcmpi(manipulatorInfo.action,'train')
     [allFeatures,mu,sigma] = zscore(manipulatorInfo.features,0,2);
     manipulatorInfo.mu = mu;
     manipulatorInfo.sigma = sigma;
-    [pc,~,~,~,pcvar] = pca(allFeatures');
+    [pc,~,pcvar] = pca(allFeatures');
+    pcvar = 100*pcvar/sum(pcvar);
     
     % if no keep criteria
     if ~isfield(manipulatorInfo,'keepCriteria')
@@ -82,9 +83,4 @@ elseif strcmp(manipulatorInfo.action,'manipulate')
     
 end
     
-    
-            
-
-
-
 end

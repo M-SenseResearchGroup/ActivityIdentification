@@ -1,4 +1,4 @@
-function db_rank = db_2class(dataTrain,labelsTrain)
+function [db_rank,db_feat] = db_2class(dataTrain,labelsTrain)
     
     % Define logical index array that identifies one of the classes
     classes = unique(labelsTrain);
@@ -17,5 +17,5 @@ function db_rank = db_2class(dataTrain,labelsTrain)
     end
     
     % Rank davies-bouldin index for features (low to high, low=good separation)
-    [~,db_rank] = sort(db_feat,'ascend');
+    [db_feat,db_rank] = sort(db_feat,'ascend');
 end

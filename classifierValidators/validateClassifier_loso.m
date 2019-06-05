@@ -15,30 +15,22 @@ function [ validation ] = validateClassifier_loso(classifier)
 %--------------------------------------------------------------------------
 %% validateClassifier_loso
 
-% get msense path if not given
-if ~isfield(classifier,'msensePath')
-    
-    % get msenseresearchgroup path
-    ok = questdlg('Select the msenseresearchgroup folder','MSENSE Path','OK',{'OK'});
-    if isempty(ok); error('Initialization terminated.'); end
-    msense = uigetdir;
-    
-else
-    msense = classifier.msensePath;
-end
-
-% load trainer
-trainer = load(fullfile(msense,'Project Data','ActivityIdentification','ClassifierTrainers',classifier.trainerName),'trainer');
-trainer = trainer.trainer;
-
 % save original feature set
-class = trainer.featureSet.class;
+class = classifier.featureSet.class;
 cnames = fieldnames(class);
 totalObservations = class.(cnames{1}).nObservations + class.(cnames{2}).nObservations;
+
+% duplicate classifier as trainer for loso
+trainer = classifier;
+
+% feature manipulator
+manipulator = str2func(classifier.featureManipulator.name);
+manipulatorInfo = classifier.featureManipulator.manipulatorInfo;
 
 % initialize true and predicted label arrays
 trueLabels = zeros(1,totalObservations);
 predictedLabels = zeros(1,totalObservations);
+predictionConfidences = zeros(1,totalObservations);
 originalClass = cell(1,totalObservations);
 
 % for each subject
@@ -64,6 +56,8 @@ for s = 1:nsubjects
     iend = istart + size(testFeatures,2) - 1;
     trueLabels(istart:iend) = horzcat(repmat(class.(cnames{1}).label,[1 length(indices.(cnames{1}))]),repmat(class.(cnames{2}).label,[1 length(indices.(cnames{2}))]));
     originalClass(istart:iend) = horzcat(class.(cnames{1}).originalClass(indices.(cnames{1})),class.(cnames{2}).originalClass(indices.(cnames{2})));
+    subject.(out).trueLabels = trueLabels(istart:iend);
+    subject.(out).originalClass = originalClass(istart:iend);
     
     % create trainer set to send to trainBinaryClassifier with this subject
     % features removed
@@ -75,8 +69,6 @@ for s = 1:nsubjects
     end
     
     % train feature manipulator
-    manipulator = str2func(trainer.featureManipulator.name);
-    manipulatorInfo = trainer.featureManipulator.manipulatorInfo;
     manipulatorInfo.action = 'train';
     manipulatorInfo.features = horzcat(trainer.featureSet.class.(cnames{1}).features,trainer.featureSet.class.(cnames{2}).features);
     manipulatorInfo.labels = [repmat(trainer.featureSet.class.(cnames{1}).label,[1 trainer.featureSet.class.(cnames{1}).nObservations])...
@@ -93,7 +85,14 @@ for s = 1:nsubjects
     manipulatorInfo = manipulator(manipulatorInfo);
     
     % classify
-    predictedLabels(istart:iend) = msenseClassify(cf,manipulatorInfo.features);
+    [predictedLabels(istart:iend),predictionConfidences(istart:iend)] = msenseClassify(cf,manipulatorInfo.features);
+    subject.(out).predictedLabels = predictedLabels(istart:iend);
+    subject.(out).predictionConfidence = predictionConfidences(istart:iend);
+    
+    % keep feature names if has them
+    if isfield(manipulatorInfo,'featureNames')
+        subject.(out).featureNames = manipulatorInfo.featureNames;
+    end
     
     % update istart
     istart = iend + 1;
@@ -101,14 +100,17 @@ for s = 1:nsubjects
 end
 
 % evaluate
-[acc,sens,spec,prec,err] = evalbc(trueLabels,predictedLabels,originalClass);
+[acc,sens,spec,prec,auc,roc,err] = evalbc(trueLabels,predictedLabels,predictionConfidences,originalClass);
 
 % save results
 validation.loso.accuracy = acc;
 validation.loso.sensitivity = sens;
 validation.loso.specificity = spec;
 validation.loso.precision = prec;
+validation.loso.auc = auc;
+validation.loso.roc = roc;
 validation.loso.error = err;
+validation.loso.subject = subject;
 
 end
 

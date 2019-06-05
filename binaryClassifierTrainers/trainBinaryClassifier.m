@@ -1,68 +1,23 @@
 function [ classifier ] = trainBinaryClassifier(trainer)
 %Reed Gurchiek, 2018
-%   description
+%   trains binary classifier based on user specifications determined in
+%   initializeBinaryClassifier
 %
 %----------------------------------INPUTS----------------------------------
 %
-%   in:
-%       data type, description
+%   trainer:
+%       trainer struct from intializeBinaryClassifer, contains training
+%       details, model training params, feature details and
+%       manipulation/reduction details
 %
 %---------------------------------OUTPUTS----------------------------------
 %
-%   out:
-%       data type, description
+%   classifier:
+%       same as trainer except with fitted model in modelDetails.model.mdl
+%       and without the features
 %
 %--------------------------------------------------------------------------
 %% trainBinaryClassifier
-
-
-% if no trainer
-if nargin == 0
-        
-    if isfield(trainer,'msensePath')
-        msense = trainer.msensePath;
-    else
-        % get msenseresearchgroup path
-        ok = questdlg('Select the msenseresearchgroup folder','MSENSE Path','OK',{'OK'});
-        if isempty(ok); error('Initialization terminated.'); end
-        msense = uigetdir;
-    end
-
-    % get possible trainer structs
-    trainDir = dir(fullfile(msense,'Project Data','ActivityIdentification','ClassifierTrainers'));
-    trainerNames = cell(0);
-    i = 1;
-    while i <= numel(trainDir)
-
-        % delete if hidden
-        if trainDir(i).name(1) == '.'; trainDir(i) = [];
-
-        % if not .mat extension
-        elseif ~strcmpi(trainDir(i).name(end-3:end),'.mat'); trainDir(i) = [];
-
-        % otherwise save
-        else
-            trainerNames{i} = trainDir(i).name;
-            i = i + 1;
-        end
-
-    end
-    
-    % if no trainer
-    if isempty(trainerNames)
-        error('No trainer structs exist in ActivityIdentification/ClassifierTrainers.  Use initializeBinaryClassifierTrainer first.');
-    end
-
-    % select trainer
-    itrainerNames = listdlg('ListString',trainerNames,'PromptString','Select trainer:','SelectionMode','single','ListSize',[300,100]);
-    trainDir = trainDir(itrainerNames);
-    trainerNames = trainerNames(itrainerNames);
-
-    % load trainer
-    trainer = load(fullfile(msense,'Project Data','ActivityIdentification','ClassifierTrainers',trainerNames{1}),'trainer');
-    trainer = trainer.trainer;
-    
-end
 
 % get features and labels
 classNames = trainer.featureSet.classNames;
@@ -77,67 +32,62 @@ manipulatorInfo.action = 'manipulate';
 manipulatorInfo.features = features;
 manipulatorInfo = manipulator(manipulatorInfo);
 features = manipulatorInfo.features;
+    
+% get fitter
+model = trainer.modelDetails.model;
+fitter = str2func(model.fitter);
 
-% for each model
-modelDetails = trainer.modelDetails;
-for m = 1:numel(modelDetails.model)
-    
-    % get fitter
-    fitter = str2func(modelDetails.model(m).fitter);
-    
-    % train
-    modelDetails.model(m).mdl = fitter(features',labels,'OptimizeHyperparameters',modelDetails.model(m).optimize,...
-                                                         modelDetails.model(m).parameterName1,modelDetails.model(m).parameterValue1,...
-                                                         modelDetails.model(m).parameterName2,modelDetails.model(m).parameterValue2);
-    
-    % if svm
-    if strcmp(modelDetails.model(m).fitter,'fitcsvm')
-        
-        % get score transform
-        modelDetails.model(m).mdl = fitSVMPosterior(modelDetails.model(m).mdl);
-        
-    end
-    
-    % get 10 fold cross validation accuracy
-     cv = fitter(features',labels,'CrossVal','on',...
-                                  modelDetails.model(m).parameterName1,modelDetails.model(m).parameterValue1,...
-                                  modelDetails.model(m).parameterName2,modelDetails.model(m).parameterValue2);
-                              
-    % save
-    modelDetails.model(m).crossValidationAccuracy = 1-kfoldLoss(cv);
-    
+% get params
+paramNames = fieldnames(model.fitterParameters);
+param = model.fitterParameters;
+
+% train
+% 0 params
+if isempty(paramNames)
+    mdl = fitter(features',labels);
+% 1 param
+elseif length(paramNames) == 1
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}));
+% 2 param
+elseif length(paramNames) == 2
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}));
+% 3 param
+elseif length(paramNames) == 3
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}),paramNames{3},param.(paramNames{3}));
+% 4 param
+elseif length(paramNames) == 4
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}),paramNames{3},param.(paramNames{3}),paramNames{4},param.(paramNames{4}));
+% 5 param
+elseif length(paramNames) == 5
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}),paramNames{3},param.(paramNames{3}),paramNames{4},param.(paramNames{4}),paramNames{5},param.(paramNames{5}));
+% 6 param
+elseif length(paramNames) == 6
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}),paramNames{3},param.(paramNames{3}),paramNames{4},param.(paramNames{4}),paramNames{5},param.(paramNames{5}),paramNames{6},param.(paramNames{6}));
+% 7 param
+elseif length(paramNames) == 7
+    mdl = fitter(features',labels,paramNames{1},param.(paramNames{1}),paramNames{2},param.(paramNames{2}),paramNames{3},param.(paramNames{3}),paramNames{4},param.(paramNames{4}),paramNames{5},param.(paramNames{5}),paramNames{6},param.(paramNames{6}),paramNames{7},param.(paramNames{7}));
 end
 
-trainer.modelDetails = modelDetails;
+% get score transform if svm
+if strcmp(model.fitter,'fitcsvm')
+    mdl = fitSVMPosterior(mdl);
+elseif strcmp(model.fitter,'fitclinear')
+    if strcmp(model.fitterParameters.Learner,'svm')
+        mdl = fitSVMPosterior(mdl);
+    end
+end
 
-%% save to classifier
+% score threshold
+if strcmp(trainer.modelDetails.scoreThresholdSelector,'none'); trainer.modelDetails.model.scoreThreshold = 0.5;
+else
+    [~,predictionScores] = predict(mdl,features');
+    [xroc,yroc,thresholds] = perfcurve(labels',predictionScores(:,2),1);
+    trainer.modelDetails.model.scoreThreshold = scoreThresholdSelector(trainer.modelDetails.scoreThresholdSelector,xroc,yroc,thresholds);
+end
 
-trainer = rmfield(trainer,'dateInitialized');
+trainer.modelDetails.model.mdl = mdl;
+
+% save to classifier
 classifier = trainer;
-classifier.trainerName = classifier.name;
-classifier.dateTrained = date;
-
-% if democratic
-keepFeatures = 0;
-if strcmp(modelDetails.type,'democratic')
-    
-    % and loops > 0
-    if modelDetails.nLoops > 0
-        
-        % then keep features
-        keepFeatures = 1;
-        
-    end
-    
-end
-
-% keep features?
-if ~keepFeatures
-    
-    classNames = classifier.featureSet.classNames;
-    classifier.featureSet.class.(classNames{1}).features = [];
-    classifier.featureSet.class.(classNames{2}).features = [];
-    
-end
                                   
 end
